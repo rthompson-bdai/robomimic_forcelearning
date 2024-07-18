@@ -418,7 +418,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--use_binned",
+        "--use_binning",
         action='store_true',
         help="wraps env in binning wrapper for force/torque data"
     )
