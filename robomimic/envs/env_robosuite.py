@@ -222,6 +222,43 @@ class EnvRobosuite(EB.EnvBase):
             ret["gripper_qpos"] = np.array(di["gripper_qpos"])
         return ret
 
+    def _get_observations(self, di=None):
+        """
+        Get current environment observation dictionary.
+
+        Args:
+            di (dict): current raw observation dictionary from robosuite to wrap and provide 
+                as a dictionary. If not provided, will be queried from robosuite.
+        """
+        if di is None:
+            di = self.env._get_observations(force_update=True) if self._is_v1 else self.env._get_observation()
+        ret = {}
+        for k in di:
+            if (k in ObsUtils.OBS_KEYS_TO_MODALITIES) and ObsUtils.key_is_obs_modality(key=k, obs_modality="rgb"):
+                ret[k] = di[k][::-1]
+                if self.postprocess_visual_obs:
+                    ret[k] = ObsUtils.process_obs(obs=ret[k], obs_key=k)
+
+        # "object" key contains object information
+        ret["object"] = np.array(di["object-state"])
+
+        if self._is_v1:
+            for robot in self.env.robots:
+                # add all robot-arm-specific observations. Note the (k not in ret) check
+                # ensures that we don't accidentally add robot wrist images a second time
+                pf = robot.robot_model.naming_prefix
+                for k in di:
+                    if k.startswith(pf) and (k not in ret) and \
+                            (not k.endswith("proprio-state")):
+                        ret[k] = np.array(di[k])
+        else:
+            # minimal proprioception for older versions of robosuite
+            ret["proprio"] = np.array(di["robot-state"])
+            ret["eef_pos"] = np.array(di["eef_pos"])
+            ret["eef_quat"] = np.array(di["eef_quat"])
+            ret["gripper_qpos"] = np.array(di["gripper_qpos"])
+        return ret
+
     def get_state(self):
         """
         Get current environment simulator state as a dictionary. Should be compatible with @reset_to.
