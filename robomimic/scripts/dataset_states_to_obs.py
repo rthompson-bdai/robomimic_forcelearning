@@ -96,13 +96,18 @@ def extract_trajectory(
     # iteration variable @t is over "next obs" indices
     for t in range(1, traj_len + 1):
 
+        #print(dir(env))
+        #print(env.get_state())
+        state = env.get_state()['states']
+        traj['states'][t-1] = state
+
         # get next observation
-        if t == traj_len:
-            # play final action to get next observation for last timestep
-            next_obs, _, _, _ = env.step(actions[t - 1])
-        else:
-            # reset to simulator state to get observation
-            next_obs = env.reset_to({"states" : states[t]})
+        #if t == traj_len:
+        # play final action to get next observation for last timestep
+        next_obs, _, _, _ = env.step(actions[t - 1])
+        #else:
+        #    # reset to simulator state to get observation
+        #    next_obs = env.reset_to({"states" : states[t]})
 
         # infer reward signal
         # note: our tasks use reward r(s'), reward AFTER transition, so this is
@@ -127,6 +132,8 @@ def extract_trajectory(
 
         # update for next iter
         obs = deepcopy(next_obs)
+    success = env.is_success()["task"]
+    traj['states'][t-1] = env.get_state()['states']
 
     # convert list of dict to dict of list for obs dictionaries (for convenient writes to hdf5 dataset)
     traj["obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["obs"])
@@ -142,12 +149,14 @@ def extract_trajectory(
         else:
             traj[k] = np.array(traj[k])
 
-    return traj
+    return traj, success
 
 
 def dataset_states_to_obs(args):
     # create environment to use for data processing
+    print("ACCESSING DATASET")
     env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
+    print("ENVIRONMENT BEING CREATED")
     env = EnvUtils.create_env_for_data_processing(
         env_meta=env_meta,
         camera_names=args.camera_names, 
@@ -182,7 +191,12 @@ def dataset_states_to_obs(args):
 
     total_samples = 0
     for ind in range(len(demos)):
+
+        if ind % args.n_processes != args.process_index:
+            continue
+
         ep = demos[ind]
+        print(f"Trying index {ind}")
 
         # prepare initial state to reload from
         states = f["data/{}/states".format(ep)][()]
@@ -192,7 +206,7 @@ def dataset_states_to_obs(args):
 
         # extract obs, rewards, dones
         actions = f["data/{}/actions".format(ep)][()]
-        traj = extract_trajectory(
+        traj, success = extract_trajectory(
             env=env, 
             initial_state=initial_state, 
             states=states, 
@@ -200,38 +214,40 @@ def dataset_states_to_obs(args):
             done_mode=args.done_mode,
         )
 
-        # maybe copy reward or done signal from source file
-        if args.copy_rewards:
-            traj["rewards"] = f["data/{}/rewards".format(ep)][()]
-        if args.copy_dones:
-            traj["dones"] = f["data/{}/dones".format(ep)][()]
+        if success:
 
-        # store transitions
+            # maybe copy reward or done signal from source file
+            if args.copy_rewards:
+                traj["rewards"] = f["data/{}/rewards".format(ep)][()]
+            if args.copy_dones:
+                traj["dones"] = f["data/{}/dones".format(ep)][()]
 
-        # IMPORTANT: keep name of group the same as source file, to make sure that filter keys are
-        #            consistent as well
-        ep_data_grp = data_grp.create_group(ep)
-        ep_data_grp.create_dataset("actions", data=np.array(traj["actions"]))
-        ep_data_grp.create_dataset("states", data=np.array(traj["states"]))
-        ep_data_grp.create_dataset("rewards", data=np.array(traj["rewards"]))
-        ep_data_grp.create_dataset("dones", data=np.array(traj["dones"]))
-        for k in traj["obs"]:
-            if args.compress:
-                ep_data_grp.create_dataset("obs/{}".format(k), data=np.array(traj["obs"][k]), compression="gzip")
-            else:
-                ep_data_grp.create_dataset("obs/{}".format(k), data=np.array(traj["obs"][k]))
-            if not args.exclude_next_obs:
+            # store transitions
+
+            # IMPORTANT: keep name of group the same as source file, to make sure that filter keys are
+            #            consistent as well
+            ep_data_grp = data_grp.create_group(ep)
+            ep_data_grp.create_dataset("actions", data=np.array(traj["actions"]))
+            ep_data_grp.create_dataset("states", data=np.array(traj["states"]))
+            ep_data_grp.create_dataset("rewards", data=np.array(traj["rewards"]))
+            ep_data_grp.create_dataset("dones", data=np.array(traj["dones"]))
+            for k in traj["obs"]:
                 if args.compress:
-                    ep_data_grp.create_dataset("next_obs/{}".format(k), data=np.array(traj["next_obs"][k]), compression="gzip")
+                    ep_data_grp.create_dataset("obs/{}".format(k), data=np.array(traj["obs"][k]), compression="gzip")
                 else:
-                    ep_data_grp.create_dataset("next_obs/{}".format(k), data=np.array(traj["next_obs"][k]))
+                    ep_data_grp.create_dataset("obs/{}".format(k), data=np.array(traj["obs"][k]))
+                if not args.exclude_next_obs:
+                    if args.compress:
+                        ep_data_grp.create_dataset("next_obs/{}".format(k), data=np.array(traj["next_obs"][k]), compression="gzip")
+                    else:
+                        ep_data_grp.create_dataset("next_obs/{}".format(k), data=np.array(traj["next_obs"][k]))
 
-        # episode metadata
-        if is_robosuite_env:
-            ep_data_grp.attrs["model_file"] = traj["initial_state_dict"]["model"] # model xml for this episode
-        ep_data_grp.attrs["num_samples"] = traj["actions"].shape[0] # number of transitions in this episode
-        total_samples += traj["actions"].shape[0]
-        print("ep {}: wrote {} transitions to group {}".format(ind, ep_data_grp.attrs["num_samples"], ep))
+            # episode metadata
+            if is_robosuite_env:
+                ep_data_grp.attrs["model_file"] = traj["initial_state_dict"]["model"] # model xml for this episode
+            ep_data_grp.attrs["num_samples"] = traj["actions"].shape[0] # number of transitions in this episode
+            total_samples += traj["actions"].shape[0]
+            print("ep {}: wrote {} transitions to group {}".format(ind, ep_data_grp.attrs["num_samples"], ep))
 
 
     # copy over all filter keys that exist in the original hdf5
@@ -270,6 +286,22 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="(optional) stop after n trajectories are processed",
+    )
+
+    # for parallelization purposes
+    parser.add_argument(
+        "--n_processes",
+        type=int,
+        default=1,
+        help="number of simultaneous processes",
+    )
+
+    # for parallelization purposes
+    parser.add_argument(
+        "--process_index",
+        type=int,
+        default=0,
+        help="process index",
     )
 
     # flag for reward shaping
