@@ -18,7 +18,7 @@ class EnvWrapper(object):
         Args:
             env (EnvBase instance): The environment to wrap.
         """
-        assert isinstance(env, EB.EnvBase) or isinstance(env, EnvWrapper)
+        #assert isinstance(env, EB.EnvBase) or isinstance(env, EnvWrapper)
         self.env = env
 
     @classmethod
@@ -93,6 +93,44 @@ class EnvWrapper(object):
         else:
             return orig_attr
 
+
+class ForceBinningWrapper(EnvWrapper):
+    def __init__(self, env):
+        super(ForceBinningWrapper, self).__init__(env=env)
+        def force_binning(force):
+            if force > 1:
+                return 1
+            if force < -1:
+                return -1
+            return 0
+
+        def torque_binning(torque):
+            if torque > 0.1:
+                return 1
+            if torque < -0.1:
+                return -1
+            return 0
+
+        self.force_bin = np.vectorize(force_binning)
+        self.torque_bin = np.vectorize(torque_binning)
+
+    def step(self, action):
+        observation, r, done, info = self.env.step(action)
+        observation['robot0_ee_force'] = self.force_bin(observation['robot0_ee_force'] - self.meanshift_force)
+        observation['robot0_ee_torque'] = self.torque_bin(observation['robot0_ee_torque'])
+        return observation, r, done, info
+
+    def reset(self):
+        obs = self.env.reset()
+        obs, _, _, _ = self.env.step([0,0,0,0,0,0,1])
+        self.meanshift_force = self.env._get_observations()['robot0_ee_force']
+        return obs
+
+    def reset_to(self, state):
+        obs = self.env.reset_to(state)
+        obs, _, _, _ = self.env.step([0,0,0,0,0,0,1])
+        self.meanshift_force = self.env._get_observations()['robot0_ee_force']
+        return obs
 
 class FrameStackWrapper(EnvWrapper):
     """
