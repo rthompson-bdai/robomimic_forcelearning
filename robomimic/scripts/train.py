@@ -40,7 +40,7 @@ import robomimic.utils.file_utils as FileUtils
 from robomimic.config import config_factory
 from robomimic.algo import algo_factory, RolloutPolicy
 from robomimic.utils.log_utils import PrintLogger, DataLogger, flush_warnings
-
+from robomimic.envs.wrappers import ForceBinningWrapper
 
 def train(config, device):
     """
@@ -104,6 +104,8 @@ def train(config, device):
                 use_image_obs=shape_meta["use_images"], 
             )
             env = EnvUtils.wrap_env_from_config(env, config=config) # apply environment warpper, if applicable
+            if args.use_binning:
+                env = ForceBinningWrapper(env)
             envs[env.name] = env
             print(envs[env.name])
 
@@ -413,6 +415,12 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="(optional) if provided, override the dataset path defined in the config",
+    )
+
+    parser.add_argument(
+        "--use_binned",
+        action='store_true',
+        help="wraps env in binning wrapper for force/torque data"
     )
 
     # debug mode
