@@ -18,11 +18,11 @@ import robomimic.utils.obs_utils as ObsUtils
 import robomimic.envs.env_base as EB
 
 # protect against missing mujoco-py module, since robosuite might be using mujoco-py or DM backend
-try:
-    import mujoco_py
-    MUJOCO_EXCEPTIONS = [mujoco_py.builder.MujocoException]
-except ImportError:
-    MUJOCO_EXCEPTIONS = []
+# try:
+#     import mujoco_py
+#     MUJOCO_EXCEPTIONS = [mujoco_py.builder.MujocoException]
+# except ImportError:
+MUJOCO_EXCEPTIONS = []
 
 
 class EnvRobosuite(EB.EnvBase):

@@ -56,7 +56,7 @@ def train(config, device):
     print("\n============= New Training Run with Config =============")
     print(config)
     print("")
-    log_dir, ckpt_dir, video_dir = TrainUtils.get_exp_dir(config)
+    log_dir, ckpt_dir, video_dir = TrainUtils.get_exp_dir(config, auto_remove_exp_dir=True)
 
     if config.experiment.logging.terminal_output_to_txt:
         # log stdout and stderr to a text file
@@ -118,6 +118,7 @@ def train(config, device):
         log_tb=config.experiment.logging.log_tb,
         log_wandb=config.experiment.logging.log_wandb,
     )
+
     model = algo_factory(
         algo_name=config.algo_name,
         config=config,
@@ -125,7 +126,6 @@ def train(config, device):
         ac_dim=shape_meta["ac_dim"],
         device=device,
     )
-    
     # save the config as a json file
     with open(os.path.join(log_dir, '..', 'config.json'), 'w') as outfile:
         json.dump(config, outfile, indent=4)

@@ -154,7 +154,9 @@ def extract_trajectory(
 
 def dataset_states_to_obs(args):
     # create environment to use for data processing
+    print("ACCESSING DATASET")
     env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
+    print("ENVIRONMENT BEING CREATED")
     env = EnvUtils.create_env_for_data_processing(
         env_meta=env_meta,
         camera_names=args.camera_names, 
@@ -189,7 +191,12 @@ def dataset_states_to_obs(args):
 
     total_samples = 0
     for ind in range(len(demos)):
+
+        if ind % args.n_processes != args.process_index:
+            continue
+
         ep = demos[ind]
+        print(f"Trying index {ind}")
 
         # prepare initial state to reload from
         states = f["data/{}/states".format(ep)][()]
@@ -235,12 +242,12 @@ def dataset_states_to_obs(args):
                     else:
                         ep_data_grp.create_dataset("next_obs/{}".format(k), data=np.array(traj["next_obs"][k]))
 
-        # episode metadata
-        if is_robosuite_env:
-            ep_data_grp.attrs["model_file"] = traj["initial_state_dict"]["model"] # model xml for this episode
-        ep_data_grp.attrs["num_samples"] = traj["actions"].shape[0] # number of transitions in this episode
-        total_samples += traj["actions"].shape[0]
-        print("ep {}: wrote {} transitions to group {}".format(ind, ep_data_grp.attrs["num_samples"], ep))
+            # episode metadata
+            if is_robosuite_env:
+                ep_data_grp.attrs["model_file"] = traj["initial_state_dict"]["model"] # model xml for this episode
+            ep_data_grp.attrs["num_samples"] = traj["actions"].shape[0] # number of transitions in this episode
+            total_samples += traj["actions"].shape[0]
+            print("ep {}: wrote {} transitions to group {}".format(ind, ep_data_grp.attrs["num_samples"], ep))
 
 
     # copy over all filter keys that exist in the original hdf5
@@ -279,6 +286,22 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="(optional) stop after n trajectories are processed",
+    )
+
+    # for parallelization purposes
+    parser.add_argument(
+        "--n_processes",
+        type=int,
+        default=1,
+        help="number of simultaneous processes",
+    )
+
+    # for parallelization purposes
+    parser.add_argument(
+        "--process_index",
+        type=int,
+        default=0,
+        help="process index",
     )
 
     # flag for reward shaping
