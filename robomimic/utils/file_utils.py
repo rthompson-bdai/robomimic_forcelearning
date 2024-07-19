@@ -433,6 +433,7 @@ def env_from_checkpoint(ckpt_path=None, ckpt_dict=None, env_name=None, render=Fa
 
     # metadata from model dict to get info needed to create environment
     env_meta = ckpt_dict["env_metadata"]
+    env_meta['env_name'] = env_name
     shape_meta = ckpt_dict["shape_metadata"]
 
     # create env from saved metadata
